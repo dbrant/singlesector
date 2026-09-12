@@ -7,7 +7,7 @@
 ;  Pixels go straight into the frame buffer at A000:0000.
 ;
 ;  Controls:  arrows  pan
-;             + / -   zoom in / out   (main keyboard or numeric keypad)
+;             = / -   zoom in / out   (the keypad + and - work as well)
 ;             J       explore the Julia set of the point under the crosshair
 ;             M       back to the Mandelbrot set
 ;  The two sets keep separate positions and zooms, so you can hop between
@@ -153,7 +153,9 @@ key:
         or      al, 0x20                ; fold J and M to lower case
         mov     edx, [step]
         shl     edx, PAN
-        cmp     al, '+'
+        cmp     al, '='                 ; zoom in, no shift needed
+        je      zoomin
+        cmp     al, '+'                 ; so does the keypad +
         je      zoomin
         cmp     al, '-'
         je      zoomout
