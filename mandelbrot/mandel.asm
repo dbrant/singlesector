@@ -1,5 +1,5 @@
 ; ============================================================================
-;  mandel.asm -- a Mandelbrot explorer that fits in one 512-byte boot sector
+;  mandel.asm -- a Mandelbrot / Julia explorer in one 512-byte boot sector
 ;
 ;  Boots on any 386 or later PC, talks to nothing but the BIOS:
 ;       int 10h / ah=00h al=13h   VGA 320x200x256, default palette
@@ -8,6 +8,10 @@
 ;
 ;  Controls:  arrows  pan
 ;             + / -   zoom in / out   (main keyboard or numeric keypad)
+;             J       explore the Julia set of the point under the crosshair
+;             M       back to the Mandelbrot set
+;  The two sets keep separate positions and zooms, so you can hop between
+;  them; every visit to a Julia set picks up the Mandelbrot crosshair afresh.
 ;
 ;  Arithmetic is 32-bit signed fixed point, 8.24 (1.0 == 1 << 24).  The
 ;  escape test x*x + y*y > 4 keeps every iterate inside |z| < 2, so the
@@ -23,10 +27,13 @@
         org     0x7c00
 
 STEP0   equ     0x00026666      ; 0.009375 -> 3.0 units across the screen
+JSTEP0  equ     0x00033333      ; 0.0125   -> 4.0 units, a good Julia view
 E0      equ     17              ; bsr(STEP0), the reference zoom exponent
 MAXSTEP equ     0x000c0000      ; zoom-out limit (keeps the maths in range)
 ITBASE  equ     64              ; iterations at the default zoom
 PAN     equ     5               ; pan one 32nd of a screen (1 << 5 pixels)
+MIDDLE  equ     100 * 320 + 160 ; centre pixel of the screen
+ARM     equ     4               ; crosshair arm length
 
 ; ---------------------------------------------------------------------------
 start:
@@ -35,7 +42,7 @@ start:
         mov     ss, ax
         mov     sp, start               ; stack grows down from 7C00
         cld
-        mov     ax, 0x0013
+        mov     al, 0x13                ; ah is still zero
         int     0x10                    ; mode 13h + default 256-colour palette
         push    0xa000
         pop     es                      ; ES = frame buffer segment
@@ -44,16 +51,17 @@ start:
 render:
         mov     eax, [step]
 
-        ; iteration limit rises with the zoom: ITBASE + 8 * (E0 - log2 step)
+        ; iteration limit rises with the zoom: ITBASE + 8 * (E0 - log2 step).
+        ; bsr also clears the top of ecx, which the pixel loop counts on.
         bsr     ecx, eax
-        mov     bx, E0
-        sub     bx, cx
+        mov     bl, E0
+        sub     bl, cl
         jns     .depth
-        xor     bx, bx                  ; zoomed out: stay at ITBASE
+        xor     bl, bl                  ; zoomed out: stay at ITBASE
 .depth:
-        shl     bx, 3
-        add     bx, ITBASE
-        mov     [maxit], bx
+        shl     bl, 3
+        add     bl, ITBASE
+        mov     [maxit], bl
 
         ; mode 13h pixels are 1.25x taller than they are wide
         mov     ebx, eax
@@ -61,28 +69,35 @@ render:
         add     ebx, eax
         mov     [stepy], ebx
 
-        ; top-left corner = centre - (160, 100) * step
+        ; top-left corner = centre - (160, 100) * step, and 100 * stepy == 125 * step
         imul    ebx, eax, 160
         mov     edx, [cenx]
         sub     edx, ebx
         mov     [xleft], edx
-        imul    ebx, dword [stepy], 100
+        imul    ebx, eax, 125
         mov     edx, [ceny]
         sub     edx, ebx
-        mov     [ci], edx
+        mov     [py], edx
 
         xor     di, di                  ; frame buffer offset
-        mov     word [rows], 200
+        mov     byte [rows], 200
 .row:
         mov     edx, [xleft]
-        mov     [cr], edx
+        mov     [px], edx
         mov     word [cols], 320
 
 ; ---------------------------------------------------------------- one pixel
 .pixel:
-        xor     ebx, ebx                ; x = 0
-        xor     esi, esi                ; y = 0
-        mov     cx, [maxit]
+        mov     ebx, [px]               ; Julia: z starts at the pixel,
+        mov     esi, [py]               ;        c is whatever J picked
+        test    byte [mode], 1
+        jz      .go
+        mov     [cr], ebx               ; Mandelbrot: c is the pixel,
+        mov     [ci], esi               ;             z starts at 0
+        xor     ebx, ebx
+        xor     esi, esi
+.go:
+        mov     cl, [maxit]
 .iter:
         mov     eax, ebx
         imul    eax                     ; edx:eax = x * x
@@ -109,25 +124,43 @@ render:
         stosb                           ; cx = 0 in the set, so that is black
 
         mov     eax, [step]
-        add     [cr], eax
+        add     [px], eax
         dec     word [cols]
         jnz     .pixel
 
         mov     eax, [stepy]
-        add     [ci], eax
-        dec     word [rows]
+        add     [py], eax
+        dec     byte [rows]
         jnz     .row
+
+; ------------------------------------------- crosshair, Mandelbrot mode only
+        test    byte [mode], 1
+        jz      key
+        mov     al, 15                  ; white
+        mov     cx, ARM * 2 + 1
+        mov     bx, MIDDLE - ARM * 320
+        mov     di, MIDDLE - ARM
+.cross:
+        stosb                           ; a pixel of the horizontal arm
+        mov     [es:bx], al             ; a pixel of the vertical arm
+        add     bx, 320
+        loop    .cross
 
 ; ------------------------------------------------------------------ keyboard
 key:
         xor     ah, ah
         int     0x16                    ; ah = scan code, al = ASCII
+        or      al, 0x20                ; fold J and M to lower case
         mov     edx, [step]
         shl     edx, PAN
         cmp     al, '+'
         je      zoomin
         cmp     al, '-'
         je      zoomout
+        cmp     al, 'j'
+        je      swapset
+        cmp     al, 'm'
+        je      swapset
         cmp     ah, 0x4b                ; left
         je      panleft
         cmp     ah, 0x4d                ; right
@@ -142,18 +175,18 @@ panleft:
         neg     edx
 panx:
         add     [cenx], edx
-        jmp     render
+        jmp     again
 panup:
         neg     edx
 pany:
         add     [ceny], edx
-        jmp     render
+        jmp     again
 
 zoomin:
         shr     dword [step], 1
         jnz     again
         inc     dword [step]            ; never let the step reach zero
-        jmp     render
+        jmp     again
 zoomout:
         shl     dword [step], 1
         cmp     dword [step], MAXSTEP
@@ -162,17 +195,48 @@ zoomout:
 again:
         jmp     render
 
+; ---------------------------------------------------------- change of subject
+swapset:
+        xchg    al, [mode]              ; al = the set we are leaving
+        cmp     al, [mode]
+        je      key                     ; already there: nothing to do
+        cmp     al, 'm'
+        jne     .views                  ; leaving Julia: just restore the view
+        mov     eax, [cenx]             ; leaving Mandelbrot: the crosshair
+        mov     [cr], eax               ; picks the Julia constant
+        mov     eax, [ceny]
+        mov     [ci], eax
+.views:                                 ; exchange the live and stored views
+        mov     si, view
+        mov     cx, 6
+.swap:
+        mov     ax, [si]
+        xchg    ax, [si + 12]
+        mov     [si], ax
+        inc     si
+        inc     si
+        loop    .swap
+        jmp     again
+
 ; ------------------------------------------------------------------ variables
-step    dd      STEP0                   ; world units per pixel, horizontally
+view:                                   ; the set we are looking at
 cenx    dd      -0x00800000             ; centre of the view: -0.5 + 0.0i
 ceny    dd      0
+step    dd      STEP0                   ; world units per pixel, horizontally
+        ; the set we are not looking at; Julia sets sit nicely around 0
+        dd      0
+        dd      0
+        dd      JSTEP0
+mode    db      'm'                     ; 'm'andelbrot or 'j'ulia; bit 0 tells
+cr      dd      0                       ; the c of the iteration
+ci      dd      0
+px      dd      0                       ; world coordinates of this pixel
+py      dd      0
 stepy   dd      0                       ; step * 1.25
 xleft   dd      0                       ; world x of the left edge
-cr      dd      0                       ; c for the pixel being drawn
-ci      dd      0
-maxit   dw      0
+maxit   db      0
 cols    dw      0
-rows    dw      0
+rows    db      0
 
         times   510 - ($ - $$) db 0
         dw      0xaa55
