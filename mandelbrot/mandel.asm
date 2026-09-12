@@ -6,7 +6,7 @@
 ;       int 16h / ah=00h          wait for a keystroke
 ;  Pixels go straight into the frame buffer at A000:0000.
 ;
-;  Controls:  arrows  pan
+;  Controls:  arrows  pan by 32 pixels, or by one pixel with shift held
 ;             = / -   zoom in / out   (the keypad + and - work as well)
 ;             J       explore the Julia set of the point under the crosshair
 ;             M       back to the Mandelbrot set
@@ -40,7 +40,7 @@ start:
         xor     ax, ax
         mov     ds, ax
         mov     ss, ax
-        mov     sp, start               ; stack grows down from 7C00
+        mov     sp, ax                  ; stack grows down from the 64K mark
         cld
         mov     al, 0x13                ; ah is still zero
         int     0x10                    ; mode 13h + default 256-colour palette
@@ -53,12 +53,11 @@ render:
 
         ; iteration limit rises with the zoom: ITBASE + 8 * (E0 - log2 step).
         ; bsr also clears the top of ecx, which the pixel loop counts on.
+        ; MAXSTEP holds log2 step at 19 or below, so the depth never falls
+        ; under -2 and the limit stays in 48 .. 200, even zoomed right out.
         bsr     ecx, eax
         mov     bl, E0
         sub     bl, cl
-        jns     .depth
-        xor     bl, bl                  ; zoomed out: stay at ITBASE
-.depth:
         shl     bl, 3
         add     bl, ITBASE
         mov     [maxit], bl
@@ -137,7 +136,7 @@ render:
         test    byte [mode], 1
         jz      key
         mov     al, 15                  ; white
-        mov     cx, ARM * 2 + 1
+        mov     cl, ARM * 2 + 1         ; ch is still zero, as ever
         mov     bx, MIDDLE - ARM * 320
         mov     di, MIDDLE - ARM
 .cross:
@@ -151,8 +150,11 @@ key:
         xor     ah, ah
         int     0x16                    ; ah = scan code, al = ASCII
         or      al, 0x20                ; fold J and M to lower case
-        mov     edx, [step]
-        shl     edx, PAN
+        mov     edx, [step]             ; one pixel of pan
+        test    byte [0x417], 3         ; BIOS keyboard flags: either shift?
+        jnz     .fine
+        shl     edx, PAN                ; no shift: pan by 32 pixels
+.fine:
         cmp     al, '='                 ; zoom in, no shift needed
         je      zoomin
         cmp     al, '+'                 ; so does the keypad +
@@ -172,30 +174,6 @@ key:
         cmp     ah, 0x50                ; down
         je      pany
         jmp     key                     ; anything else: keep the picture
-
-panleft:
-        neg     edx
-panx:
-        add     [cenx], edx
-        jmp     again
-panup:
-        neg     edx
-pany:
-        add     [ceny], edx
-        jmp     again
-
-zoomin:
-        shr     dword [step], 1
-        jnz     again
-        inc     dword [step]            ; never let the step reach zero
-        jmp     again
-zoomout:
-        shl     dword [step], 1
-        cmp     dword [step], MAXSTEP
-        jbe     again
-        shr     dword [step], 1         ; at the limit: leave the view alone
-again:
-        jmp     render
 
 ; ---------------------------------------------------------- change of subject
 swapset:
@@ -219,6 +197,31 @@ swapset:
         inc     si
         loop    .swap
         jmp     again
+
+; --------------------------------------------------------------------- moving
+panleft:
+        neg     edx
+panx:
+        add     [cenx], edx
+        jmp     again
+panup:
+        neg     edx
+pany:
+        add     [ceny], edx
+        jmp     again
+
+zoomin:
+        shr     dword [step], 1
+        jnz     again
+        inc     dword [step]            ; never let the step reach zero
+        jmp     again
+zoomout:
+        shl     dword [step], 1
+        cmp     dword [step], MAXSTEP
+        jbe     again
+        shr     dword [step], 1         ; at the limit: leave the view alone
+again:
+        jmp     render
 
 ; ------------------------------------------------------------------ variables
 view:                                   ; the set we are looking at
