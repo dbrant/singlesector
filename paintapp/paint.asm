@@ -1,6 +1,8 @@
 ; ============================================================================
 ;  paint.asm -- a mouse-driven paint program in one 512-byte boot sector
 ;
+;  Dmitry Brant, 2025+, feat. Claude Code.
+;
 ;  Boots on any 386 or later PC and talks to nothing but the BIOS and the
 ;  keyboard controller:
 ;       int 10h / ah=00h al=13h   VGA 320x200x256, default palette

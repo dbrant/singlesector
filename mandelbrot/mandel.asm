@@ -1,12 +1,14 @@
 ; ============================================================================
 ;  mandel.asm -- a Mandelbrot / Julia explorer in one 512-byte boot sector
 ;
+;  Dmitry Brant, 2025+, feat. Claude Code.
+;
 ;  Boots on any 386 or later PC, talks to nothing but the BIOS:
 ;       int 10h / ah=00h al=13h   VGA 320x200x256, default palette
 ;       int 16h / ah=00h          wait for a keystroke
 ;  Pixels go straight into the frame buffer at A000:0000.
 ;
-;  Controls:  arrows  pan by 32 pixels, or by one pixel with shift held
+;  Controls:  arrows  pan by 32 pixels, or by one pixel with Shift+arrows
 ;             = / -   zoom in / out   (the keypad + and - work as well)
 ;             J       explore the Julia set of the point under the crosshair
 ;             M       back to the Mandelbrot set
