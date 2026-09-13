@@ -22,7 +22,7 @@
 ;
 ;  Assemble:  nasm -f bin -o mandel.bin mandel.asm
 ;  Run:       qemu-system-i386 -fda mandel.bin
-;  On iron:   write mandel.bin to the first sector of a USB stick / floppy
+;  ...or write to a floppy disk or USB drive and boot on a real machine!
 ; ============================================================================
 
         bits    16

@@ -12,7 +12,7 @@
 ;       ports 40h / 43h           the 8253, told to tick 70 times a second
 ;  Pixels go into a buffer at 1000:0000 and are copied to A000:0000.
 ;
-;  Controls:  space   flap
+;  Controls:  space - flap
 ;
 ;  The pipes come in from the right with their gaps at random heights, and
 ;  keep on coming until the bird touches one of them or the ground.  The top
@@ -38,7 +38,7 @@
 ;
 ;  Assemble:  nasm -f bin -o bird.bin bird.asm
 ;  Run:       qemu-system-i386 -drive file=bird.bin,format=raw
-;  On iron:   write bird.bin to the first sector of a USB stick / floppy
+;  ...or write to a floppy disk or USB drive and boot on a real machine!
 ; ============================================================================
 
         bits    16

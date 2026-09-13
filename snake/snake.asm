@@ -45,7 +45,7 @@
 ;
 ;  Assemble:  nasm -f bin -o snake.bin snake.asm
 ;  Run:       qemu-system-i386 -drive file=snake.bin,format=raw
-;  On iron:   write snake.bin to the first sector of a USB stick / floppy
+;  ...or write to a floppy disk or USB drive and boot on a real machine!
 ; ============================================================================
 
         bits    16
